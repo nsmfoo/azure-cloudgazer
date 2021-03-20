@@ -4,7 +4,8 @@
 This script allows you to collect external IPs and URL's (webapp) from any Azure subscriptions that you have access to.
 
 The information is saved to files, so you can use the data in other tools if you fancy.
-But It also allows you to scan the resources using the data collected
+
+But the script also allows you to scan the resources using the data collected
 
 ## Install:
 
@@ -18,7 +19,7 @@ azure_cloudgazer.py [-h] [-ip] [-url] [-scan]
 
 ## Examples:
 
-### Collects all external IPs
+### Collect all external IPs
 
 python3 azure_cloudgazer.py -ip
 
