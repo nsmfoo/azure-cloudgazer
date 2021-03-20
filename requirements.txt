@@ -1,0 +1,3 @@
+bs4
+python3-nmap
+nested-lookup
