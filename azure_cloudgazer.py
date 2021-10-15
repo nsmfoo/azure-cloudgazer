@@ -4,24 +4,26 @@ import json
 import time
 import os
 from datetime import datetime, timedelta
-import nmap3
-from nested_lookup import nested_lookup
+import nmap
 import urllib.request
 from urllib.error import HTTPError
 import urllib.response
 from bs4 import BeautifulSoup
+from time import sleep
 
 parser = argparse.ArgumentParser(description='Collect external information and scan')
 parser.add_argument('-ip',action='store_true', help='Collect external IP addresses')
 parser.add_argument('-url',action='store_true', help='Collect external URLs')
-parser.add_argument('-scan',action='store_true', help='Scan, just like the name implies (will need -ip or -url')
-args = parser.parse_args()
+parser.add_argument('-scan',action='store_true', help='Scan, just like the name implies (requires -ip or -url')
+parser.add_argument('-waf',action='store_true', help='Check if the site if protected by the Azure WAF (requires -url')
+parser.add_argument('-ports', type=str, dest='ports', help='Add port/ports that you like to have scanned, replaced the built-in list (requires -ip and -scan)')
 
-print("""\                                                                                                                                          
+args = parser.parse_args()
+print("""                                                                                                                                          
                                           #                                     
-                                       ###                                      
+                                       ###                                        
                                     #####    ###                                
-                                 #######    (####                               
+                                 #######    (####                                
                               ########/    /######(                             
                            ##########     .#########                            
                         (###########      ###########*                          
@@ -46,7 +48,7 @@ print("""\
 # List subscriptions
 def azure_account ():  
     d = []
-    subscriptions = json.loads(subprocess.check_output('az account list', shell=True).decode('utf-8'))
+    subscriptions = json.loads(subprocess.check_output('az account list', shell=True, stderr=subprocess.DEVNULL).decode('utf-8'))
     for i in subscriptions:
         d.append(i['id'])   
     return d
@@ -64,7 +66,7 @@ def azure_ip (ip_file):
         for pi in ext_ips:
             ip_ext.append(pi['properties_ipAddress'])
         number += 1  
-        time.sleep(1)  
+        time.sleep(2)  
    
     # Sort output and remove dups
     list_set = set(ip_ext)
@@ -93,8 +95,8 @@ def azure_url(url_file):
 
     for var in url_ext:
         print(var)  
-    
-     # Sort output and remove dups
+     
+    # Sort output and remove dups
     list_set = set(url_ext)
     unique_list = (list(list_set))
     f.write('\n'.join(unique_list))
@@ -105,24 +107,23 @@ def azure_nmap():
     o = open(ip_scan_file, "w")
     azure_ip_in = open(ip_file, 'r').read().split('\n')
     azure_ip_in_nice = list(filter(None, azure_ip_in))
-    nmap = nmap3.Nmap()
     count = 1
+    nm = nmap.PortScanner() 
+    o.write("IP|Port|Service|Product" + "\n")
     for ips in azure_ip_in_nice:
-        try: 
-            print("* Scanning: " + str(count) + "/" + str(len(azure_ip_in_nice)))
-            count += 1
-            scan_ip = nmap.scan_top_ports(ips, args="-sV -Pn -T2 --open")
-            ports = nested_lookup('portid',scan_ip)
-            prod = nested_lookup('product',scan_ip)    
-            x = 0
-            while x < len(ports):
-                ip_scan_ext = "IP: " + ips + " Port: " + str(ports[x]) + " Possible Service: " + str(prod[x])
-                x += 1
-                print(ip_scan_ext)
-                o.write(ip_scan_ext + "\n")
-        except Exception:
-            continue
-    o.close()
+        print("* Scanning: " + str(count) + "/" + str(len(azure_ip_in_nice)))
+        count += 1
+        nm.scan(ips, ports)
+        for host in nm.all_hosts():
+            for proto in nm[host].all_protocols():
+                lport = nm[host][proto].keys()
+                for port in lport:
+                    if 'open' in nm[host][proto][port]['state']:
+                                name = (nm[host][proto][port]['name'])
+                                product = (nm[host][proto][port]['product'])
+                                print("IP: " + str(ips) + " Port: " + str(port) + " Service: " + name + " Product: " + product)
+                                o.write(str(ips) + "|" + str(port) + "|" + name + "|" + product + "\n")
+        sleep(2)
 
 def azure_crawling():
     o = open(url_scan_file, "w")
@@ -137,8 +138,7 @@ def azure_crawling():
             try: 
                 x = urllib.request.urlopen(req + url, timeout = 10)
                 xx = x.read()
-                soup = BeautifulSoup(xx, 'html.parser') 
-                time.sleep(2)  
+                soup = BeautifulSoup(xx, 'html.parser')   
                 print("URL: " + url + " Status: OK Title: " + soup.title.get_text()) 
                 o.write("URL: " + url + " Status: OK  Title: " + soup.title.get_text() + "\n")
             except urllib.error.HTTPError as e:
@@ -148,7 +148,35 @@ def azure_crawling():
                print("URL: " + url + " Error: " + str(e))  
                o.write("URL: " + url + " Error: " + str(e) + "\n")
                continue
+    time.sleep(3)
     o.close()
+
+def azure_waf_crawling():
+    o = open(waf_scan_file, "w")
+    azure_url_in = open(url_file, 'r').read().split('\n')
+    azure_url_in_nice = list(filter(None, azure_url_in))
+    count = 1
+    req_type = ['http://','https://']
+    for url in azure_url_in_nice:
+       print("* Scanning: " + str(count) + "/" + str(len(azure_url_in_nice))) 
+       count += 1 
+       # Yes I know ...
+       url = url + '?id=<script>alert(1)</script>'
+       for req in req_type: 
+            subdomain = url.split(".") 
+            try: 
+                x = urllib.request.urlopen(req + url, timeout = 10)
+                print('Not blocked :/ URL: ' + subdomain[0] + '.azurewebsites.net')  
+            except urllib.error.HTTPError as e:
+                omph = e.getheaders()
+                if 'x-ms-forbidden-ip' in str(omph):
+                 print("Schema: " + req + " URL: " + subdomain[0] + '.azurewebsites.net' + " Blocked by WAF")  
+                 o.write("Schema: " + req + " URL: " + subdomain[0] + '.azurewebsites.net' + " Blocked by WAF" + "\n")  
+            except Exception as e:
+                print("URL: " + url + " Error: " + str(e))  
+                continue
+    time.sleep(2) 
+    o.close()    
 
 # Misc settings
 # IP log file
@@ -157,6 +185,9 @@ ip_scan_file = "azure_ip_scan_result.lst"
 # URL log file
 url_file = "azure_url.lst"
 url_scan_file = "azure_url_scan_result.lst"
+waf_scan_file = "azure_waf_scan_result.lst"
+# Ports
+ports = '21-22,25,80,111,443,1433,3389,6443,8080,61616'
 
 # Logged in 
 logged_in = subprocess.getoutput("az account list-locations")
@@ -199,9 +230,15 @@ if args.url:
 if args.scan:
     # Scanning
     if args.ip:
+        if args.ports:
+           ports = args.ports
         print("* Let's go NMAP scanning! We will go soft, so go and grab some coffee")
         azure_nmap()
     # Crawling
     if args.url:
          print("* Let's go URL Crawling! We will go soft, so go and grab some coffee")
          azure_crawling()
+    # WAF check
+    if args.waf:
+         print("* Let's go WAF Checking! We will go soft, so go and grab some coffee")
+         azure_waf_crawling()     

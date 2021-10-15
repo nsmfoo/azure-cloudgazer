@@ -11,11 +11,11 @@ But the script also allows you to scan the resources using the data collected
 
 Install azure cli (az)
 
-pip3 install -r requirments.txt
+pip3 install -r requirements.txt
 
 ## Usage:
 
-azure_cloudgazer.py [-h] [-ip] [-url] [-scan]
+azure_cloudgazer.py [-h] [-ip] [-url] [-scan] [-waf] [-ports]
 
 ## Examples:
 
