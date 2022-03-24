@@ -87,6 +87,7 @@ def azure_url(url_file):
             number += 1  
             set_sub = subprocess.getoutput("az account set --subscription " + id)
             ext_url = json.loads(subprocess.getoutput("az webapp list --query \"[].{hostName: defaultHostName, state: state}\" -o json"))
+            ext_url.extend(json.loads(subprocess.getoutput("az staticwebapp list --query \"[].{hostName: defaultHostname, state: state}\" -o json")))
             for pi in ext_url:
                 url_ext.append(pi['hostName'])
             time.sleep(2)  
@@ -139,14 +140,14 @@ def azure_crawling():
                 x = urllib.request.urlopen(req + url, timeout = 10)
                 xx = x.read()
                 soup = BeautifulSoup(xx, 'html.parser')   
-                print("URL: " + url + " Status: OK Title: " + soup.title.get_text()) 
-                o.write("URL: " + url + " Status: OK  Title: " + soup.title.get_text() + "\n")
+                print("Schema: " + req + " URL: " + url + " Status: OK Title: " + soup.title.get_text()) 
+                o.write("Schema: " + req + " URL: " + url + " Status: OK  Title: " + soup.title.get_text() + "\n")
             except urllib.error.HTTPError as e:
-                print("URL: " + url + " Error: " + str(e)) 
-                o.write("URL: " + url + " Error: " + str(e) + "\n")  
+                print("Schema: " + req + " URL: " + url + " Error: " + str(e)) 
+                o.write("Schema: " + req + " URL: " + url + " Error: " + str(e) + "\n")  
             except Exception as e:
-               print("URL: " + url + " Error: " + str(e))  
-               o.write("URL: " + url + " Error: " + str(e) + "\n")
+               print("Schema: " + req + " URL: " + url + " Error: " + str(e))  
+               o.write("Schema: " + req + " URL: " + url + " Error: " + str(e) + "\n")
                continue
     time.sleep(3)
     o.close()
@@ -161,19 +162,19 @@ def azure_waf_crawling():
        print("* Scanning: " + str(count) + "/" + str(len(azure_url_in_nice))) 
        count += 1 
        # Yes I know ...
-       url = url + '?id=<script>alert(1)</script>'
+       bad_url = url + '?id=<script>alert(1)</script>'
        for req in req_type: 
             subdomain = url.split(".") 
             try: 
-                x = urllib.request.urlopen(req + url, timeout = 10)
-                print('Not blocked :/ URL: ' + subdomain[0] + '.azurewebsites.net')  
+                x = urllib.request.urlopen(req + bad_url, timeout = 10)
+                print('Not blocked :/ URL: ' + url)  
             except urllib.error.HTTPError as e:
                 omph = e.getheaders()
                 if 'x-ms-forbidden-ip' in str(omph):
-                 print("Schema: " + req + " URL: " + subdomain[0] + '.azurewebsites.net' + " Blocked by WAF")  
-                 o.write("Schema: " + req + " URL: " + subdomain[0] + '.azurewebsites.net' + " Blocked by WAF" + "\n")  
+                 print("Schema: " + req + " URL: " + url + " Blocked by WAF")  
+                 o.write("Schema: " + req + " URL: " + url + " Blocked by WAF" + "\n")  
             except Exception as e:
-                print("URL: " + url + " Error: " + str(e))  
+                print("URL: " + bad_url + " Error: " + str(e))  
                 continue
     time.sleep(2) 
     o.close()    
